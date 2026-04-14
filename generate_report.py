@@ -24,30 +24,40 @@ def generate_report(date_str: str) -> str:
         "and a Source Index."
     )
 
-    # Collect all text blocks from a streaming response
+    messages = [{"role": "user", "content": prompt}]
     report_parts: list[str] = []
 
-    with client.messages.stream(
-        model="claude-opus-4-6",
-        max_tokens=16000,
-        tools=[
-            {
-                "type": "web_search_20250305",
-                "name": "web_search",
-            }
-        ],
-        messages=[{"role": "user", "content": prompt}],
-        betas=["web-search-2025-03-05"],
-    ) as stream:
-        for event in stream:
-            # Collect text deltas
-            pass
-        # Get the final message after streaming completes
-        final_message = stream.get_final_message()
+    # Tool-use loop: Claude may call web_search multiple times before end_turn
+    while True:
+        response = client.messages.create(
+            model="claude-opus-4-6",
+            max_tokens=16000,
+            tools=[{"type": "web_search_20250305", "name": "web_search"}],
+            messages=messages,
+            extra_headers={"anthropic-beta": "web-search-2025-03-05"},
+        )
 
-    for block in final_message.content:
-        if hasattr(block, "text"):
-            report_parts.append(block.text)
+        if response.stop_reason == "end_turn":
+            for block in response.content:
+                if hasattr(block, "text"):
+                    report_parts.append(block.text)
+            break
+
+        if response.stop_reason == "tool_use":
+            # Append assistant turn and provide empty tool results to continue
+            messages.append({"role": "assistant", "content": response.content})
+            tool_results = [
+                {"type": "tool_result", "tool_use_id": block.id, "content": ""}
+                for block in response.content
+                if block.type == "tool_use"
+            ]
+            messages.append({"role": "user", "content": tool_results})
+        else:
+            # Unexpected stop reason — collect whatever text exists and exit
+            for block in response.content:
+                if hasattr(block, "text"):
+                    report_parts.append(block.text)
+            break
 
     return "\n".join(report_parts)
 
