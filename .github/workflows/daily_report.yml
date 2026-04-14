@@ -8,6 +8,9 @@ on:
   # Allow manual trigger from the Actions tab
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   send-report:
     runs-on: ubuntu-latest
